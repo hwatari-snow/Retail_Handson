@@ -1,0 +1,142 @@
+-- ============================================
+-- Snowflake セットアップスクリプト
+-- ============================================
+
+-- script for VoC Analysis handson
+USE ROLE ACCOUNTADMIN;
+
+-- cross region call
+ALTER ACCOUNT SET CORTEX_ENABLED_CROSS_REGION = 'AWS_US';
+
+-- Prepare warehouse
+-- for voc
+CREATE WAREHOUSE IF NOT EXISTS COMPUTE_WH
+  WAREHOUSE_SIZE = 'SMALL'
+  WAREHOUSE_TYPE = 'STANDARD'
+  AUTO_SUSPEND = 60
+  AUTO_RESUME = TRUE
+  INITIALLY_SUSPENDED = TRUE
+  COMMENT = 'Warehouse for VOC analyze with Cortex LLM';
+
+-- データベースの作成
+CREATE DATABASE IF NOT EXISTS HANDSON;
+
+-- データベースを使用
+USE DATABASE HANDSON;
+
+-- スキーマの作成
+CREATE SCHEMA IF NOT EXISTS RAW_DATA
+    COMMENT = '生データ格納用スキーマ';
+CREATE SCHEMA IF NOT EXISTS ANALYTICS
+    COMMENT = '分析用スキーマ';
+
+-- 作成したオブジェクトの確認
+SHOW SCHEMAS IN DATABASE HANDSON;
+
+
+use schema HANDSON.RAW_DATA;
+CREATE OR REPLACE STAGE HANDSON.RAW_DATA.HANDSON_RESOURCES
+    DIRECTORY = (ENABLE = TRUE)
+    ENCRYPTION = (TYPE = 'SNOWFLAKE_SSE')
+    COMMENT = 'Stage for HandsOn';
+
+-- Prepare voc resources
+CREATE OR REPLACE API INTEGRATION handson_git_api_integration
+  API_PROVIDER = git_https_api
+  API_ALLOWED_PREFIXES = ('https://github.com/')
+  ENABLED = TRUE;
+
+CREATE OR REPLACE GIT REPOSITORY GIT_INTEGRATION_ANALYZE_HANDSON
+  API_INTEGRATION = handson_git_api_integration
+  ORIGIN = 'https://github.com/hwatari-snow/Retail_Handson.git';
+
+
+list @GIT_INTEGRATION_ANALYZE_HANDSON/branches/main;
+
+COPY FILES INTO @HANDSON.RAW_DATA.HANDSON_RESOURCES/images/
+  FROM @GIT_INTEGRATION_ANALYZE_HANDSON/branches/main/images/
+  PATTERN = '.*\.png$';
+
+COPY FILES INTO @HANDSON.RAW_DATA.HANDSON_RESOURCES/csv/
+  FROM @GIT_INTEGRATION_ANALYZE_HANDSON/branches/main/csv/
+  PATTERN = '.*\.csv$';
+
+// Notebookを作成 //
+
+-- Notebookの作成
+CREATE OR REPLACE NOTEBOOK AI_agent_Handson
+    FROM @GIT_INTEGRATION_ANALYZE_HANDSON/branches/main/
+    MAIN_FILE = 'AI_agent_Handson.ipynb'
+    QUERY_WAREHOUSE = compute_wh
+    WAREHOUSE = compute_wh;
+
+
+
+  -- ============================================
+-- Step2: CSVデータをRAW_DATAスキーマにテーブル化
+-- ============================================
+
+USE DATABASE HANDSON;
+USE SCHEMA RAW_DATA;
+USE WAREHOUSE COMPUTE_WH;
+
+-- ============================================
+-- 売上データテーブルの作成
+-- ============================================
+
+-- 売上データ用のファイルフォーマット作成
+CREATE OR REPLACE FILE FORMAT CSV_FORMAT
+    TYPE = 'CSV'
+    FIELD_DELIMITER = ','
+    SKIP_HEADER = 1
+    FIELD_OPTIONALLY_ENCLOSED_BY = '"'
+    NULL_IF = ('', 'NULL')
+    ENCODING = 'UTF8';
+
+-- 売上データテーブルの作成
+CREATE OR REPLACE TABLE HANDSON.RAW_DATA.SALES (
+    SALE_DATE DATE,
+    JAN_CODE VARCHAR(20),
+    PRODUCT_NAME VARCHAR(500),
+    QUANTITY NUMBER(10,0),
+    UNIT_PRICE NUMBER(10,0),
+    SALES_AMOUNT NUMBER(15,0),
+    CREATED_AT TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP()
+);
+
+-- ステージからデータをロード
+COPY INTO HANDSON.RAW_DATA.SALES (SALE_DATE, JAN_CODE, PRODUCT_NAME, QUANTITY, UNIT_PRICE, SALES_AMOUNT)
+FROM @HANDSON.RAW_DATA.HANDSON_RESOURCES/csv/sales.csv
+FILE_FORMAT = (FORMAT_NAME = 'CSV_FORMAT')
+ON_ERROR = 'CONTINUE';
+
+-- 売上データの確認
+SELECT COUNT(*) AS TOTAL_RECORDS FROM HANDSON.RAW_DATA.SALES;
+SELECT * FROM HANDSON.RAW_DATA.SALES LIMIT 10;
+
+-- ============================================
+-- 在庫データテーブルの作成
+-- ============================================
+
+-- 在庫データテーブルの作成
+CREATE OR REPLACE TABLE HANDSON.RAW_DATA.INVENTORY (
+    INVENTORY_DATE DATE,
+    JAN_CODE VARCHAR(20),
+    PRODUCT_NAME VARCHAR(500),
+    INVENTORY_QUANTITY NUMBER(10,0),
+    UNIT_COST NUMBER(10,0),
+    INVENTORY_VALUE NUMBER(15,0),
+    CREATED_AT TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP()
+);
+
+-- ステージからデータをロード
+COPY INTO HANDSON.RAW_DATA.INVENTORY (INVENTORY_DATE, JAN_CODE, PRODUCT_NAME, INVENTORY_QUANTITY, UNIT_COST, INVENTORY_VALUE)
+FROM @HANDSON.RAW_DATA.HANDSON_RESOURCES/csv/inventory.csv
+FILE_FORMAT = (FORMAT_NAME = 'CSV_FORMAT')
+ON_ERROR = 'CONTINUE';
+
+
+
+-- 在庫データの確認
+SELECT COUNT(*) AS TOTAL_RECORDS FROM HANDSON.RAW_DATA.INVENTORY;
+SELECT * FROM HANDSON.RAW_DATA.INVENTORY LIMIT 10;
