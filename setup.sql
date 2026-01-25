@@ -66,7 +66,7 @@ COPY FILES INTO @HANDSON.RAW_DATA.HANDSON_RESOURCES/csv/
 -- Notebookの作成
 CREATE OR REPLACE NOTEBOOK AI_agent_Handson
     FROM @GIT_INTEGRATION_ANALYZE_HANDSON/branches/main/
-    MAIN_FILE = 'AI_agent_Handson.ipynb'
+    MAIN_FILE = 'AI_AGENT_HANDSON.ipynb'
     QUERY_WAREHOUSE = compute_wh
     WAREHOUSE = compute_wh;
 
