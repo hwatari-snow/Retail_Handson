@@ -20,9 +20,6 @@ Retail_Handson/
 └── images/                      # 商品画像フォルダ
 ```
 
-
-```
-
 ## 📊 ワークフロー
 
 ```
@@ -71,5 +68,5 @@ PRODUCT_MASTER (ANALYTICS)
 
 ---
 
-**最終更新**: 2026年1月26日
-**作成**:Hiroki Watari
+**最終更新**: 2026年1月26日  
+**作成**: Hiroki Watari
